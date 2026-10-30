@@ -21,8 +21,10 @@ using Scalar.AspNetCore;
 var builder = WebApplication.CreateBuilder(args);
 
 // Database
+// Database
 builder.Services.AddDbContext<IAppDbContext, AppDbContext>(options =>
-    options.UseInMemoryDatabase("VerticalSliceDb"));
+    options.UseSqlite(
+        builder.Configuration.GetConnectionString("DefaultConnection")));
 
 // Validators
 builder.Services.AddValidatorsFromAssemblyContaining<CreateStudentValidator>();
