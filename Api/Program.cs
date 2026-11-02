@@ -1,3 +1,4 @@
+using Api.Common.Authorization;
 using Api.Features.Admissions;
 using Api.Features.Auth;
 using Api.Features.Courses;
@@ -13,23 +14,23 @@ using Application.Features.Auth.Register;
 using Application.Features.Courses.CreateCourse;
 using Application.Features.Courses.GetAllCourses;
 using Application.Features.Courses.GetCourseById;
+using Application.Features.Courses.UpdateCourse;
 using Application.Features.Students.CreateStudent;
 using Application.Features.Students.GetAllStudents;
-using Microsoft.IdentityModel.Tokens;
-using System.Text;
 using Application.Features.Students.GetStudentById;
 using Domain.Common;
 using FluentValidation;
 using Infrastructure.Authentication;
 using Infrastructure.Persistence;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi;
 using Scalar.AspNetCore;
-using Api.Common.Authorization;
-using System.Security.Claims;
 using System.IdentityModel.Tokens.Jwt;
-using Application.Features.Courses.UpdateCourse;
+using System.Security.Claims;
+using System.Text;
 var builder = WebApplication.CreateBuilder(args);
 
 // Database
@@ -52,6 +53,7 @@ builder.Services.AddScoped<ICommandHandler<CreateAdmissionCommand, Result<Create
 builder.Services.AddScoped<IQueryHandler<GetAdmissionByIdQuery, Result<GetAdmissionByIdResponse>>, GetAdmissionByIdQueryHandler>();
 builder.Services.AddScoped<IQueryHandler<GetAllAdmissionsQuery, Result<GetAllAdmissionsResponse>>,GetAllAdmissionsQueryHandler>();
 builder.Services.AddScoped<ICommandHandler<LoginCommand, Result<LoginResponse>>,LoginCommandHandler>();
+builder.Services.AddSingleton<IAuthorizationHandler, AdmissionOwnerHandler>();
 builder.Services.AddScoped<ICommandHandler<RegisterCommand, Result<RegisterResponse>>,RegisterCommandHandler>();
 builder.Services.AddScoped<
     ICommandHandler<UpdateCourseCommand, Result<UpdateCourseResponse>>,
@@ -98,6 +100,7 @@ var jwtSection = builder.Configuration.GetSection(JwtOptions.SectionName);
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
 .AddJwtBearer(options =>
 {
+    options.MapInboundClaims = false;
     options.TokenValidationParameters = new TokenValidationParameters
     {
         ValidateIssuer = true,
@@ -151,7 +154,6 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     };
 });
 
-builder.Services.AddAuthorization();
 
 
 // Seed data
