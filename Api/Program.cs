@@ -17,6 +17,7 @@ using FluentValidation;
 using Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Scalar.AspNetCore;
+using Application.Abstractions;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -39,6 +40,7 @@ builder.Services.AddScoped<IQueryHandler<GetCourseByIdQuery, Result<GetCourseByI
 builder.Services.AddScoped<ICommandHandler<CreateAdmissionCommand, Result<CreateAdmissionResponse>>, CreateAdmissionCommandHandler>();
 builder.Services.AddScoped<IQueryHandler<GetAdmissionByIdQuery, Result<GetAdmissionByIdResponse>>, GetAdmissionByIdQueryHandler>();
 builder.Services.AddScoped<IQueryHandler<GetAllAdmissionsQuery, Result<GetAllAdmissionsResponse>>,GetAllAdmissionsQueryHandler>();
+builder.Services.AddScoped<IPasswordHasher, Infrastructure.Authentication.PasswordHasher>();
 
 // API
 builder.Services.AddEndpointsApiExplorer();
