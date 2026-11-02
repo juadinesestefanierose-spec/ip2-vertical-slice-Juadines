@@ -1,10 +1,11 @@
 namespace Api.Features.Admissions;
 
-using Application.Features.Admissions.GetAllAdmissions;
+using Api.Common.Authorization;
 using Api.Common.Extensions;
 using Application.Abstractions.Messaging;
 using Application.Features.Admissions.CreateAdmission;
 using Application.Features.Admissions.GetAdmissionById;
+using Application.Features.Admissions.GetAllAdmissions;
 using Domain.Common;
 using Microsoft.AspNetCore.Mvc;
 
@@ -26,6 +27,9 @@ public static class AdmissionEndpoints
         group.MapGet("/", GetAll)
     .WithName("GetAllAdmissions")
     .WithSummary("Get all admissions");
+        group.MapPost("/", Create).RequireAuthorization(Policies.CanManageAdmissions);
+        group.MapGet("/", GetAll).RequireAuthorization(Policies.CanManageAdmissions);
+        group.MapGet("/{id:guid}", GetById).RequireAuthorization();
     }
 
     private static async Task<IResult> Create(

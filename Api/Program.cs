@@ -26,8 +26,10 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.OpenApi;
 using Scalar.AspNetCore;
+using Api.Common.Authorization;
 using System.Security.Claims;
 using System.IdentityModel.Tokens.Jwt;
+using Application.Features.Courses.UpdateCourse;
 var builder = WebApplication.CreateBuilder(args);
 
 // Database
@@ -51,6 +53,9 @@ builder.Services.AddScoped<IQueryHandler<GetAdmissionByIdQuery, Result<GetAdmiss
 builder.Services.AddScoped<IQueryHandler<GetAllAdmissionsQuery, Result<GetAllAdmissionsResponse>>,GetAllAdmissionsQueryHandler>();
 builder.Services.AddScoped<ICommandHandler<LoginCommand, Result<LoginResponse>>,LoginCommandHandler>();
 builder.Services.AddScoped<ICommandHandler<RegisterCommand, Result<RegisterResponse>>,RegisterCommandHandler>();
+builder.Services.AddScoped<
+    ICommandHandler<UpdateCourseCommand, Result<UpdateCourseResponse>>,
+    UpdateCourseCommandHandler>();
 builder.Services.AddHostedService<Infrastructure.BackgroundJobs.RevokedTokenCleanupService>();
 builder.Services.AddScoped<IPasswordHasher, Infrastructure.Authentication.PasswordHasher>();
 builder.Services.AddOptions<JwtOptions>()
@@ -65,6 +70,7 @@ builder.Services.AddSingleton<TimeProvider>(TimeProvider.System);
 builder.Services.AddScoped<ITokenService, JwtTokenService>();
 
 // API
+builder.Services.AddAppAuthorization();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddOpenApi(options =>
 {
@@ -144,12 +150,30 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
         }
     };
 });
+
 builder.Services.AddAuthorization();
 
 
 // Seed data
 var app = builder.Build();
-
+app.UseStatusCodePages(async context =>
+{
+var response = context.HttpContext.Response;
+if (response.StatusCode is StatusCodes.Status401Unauthorized
+or StatusCodes.Status403Forbidden)
+{
+    response.ContentType = "application/problem+json";
+    await response.WriteAsJsonAsync(new Microsoft.AspNetCore.Mvc.ProblemDetails
+    {
+        Status = response.StatusCode,
+        Title = response.StatusCode == StatusCodes.Status401Unauthorized
+    ? "Unauthorized" : "Forbidden",
+        Detail = response.StatusCode == StatusCodes.Status401Unauthorized
+    ? "Authentication is required to access this resource."
+    : "You do not have permission to perform this action."
+    });
+    }
+});
 await app.Services.MigrateAndSeedAsync();
 app.UseAuthentication(); // who are you?
 app.UseAuthorization(); // are you allowed?

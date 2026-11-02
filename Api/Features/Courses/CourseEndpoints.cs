@@ -1,12 +1,13 @@
 namespace Api.Features.Courses;
 
+using Api.Common.Authorization;
 using Api.Common.Extensions;
 using Application.Abstractions.Messaging;
 using Application.Features.Courses.CreateCourse;
 using Application.Features.Courses.GetAllCourses;
 using Application.Features.Courses.GetCourseById;
+using Application.Features.Courses.UpdateCourse;
 using Domain.Common;
-
 public static class CourseEndpoints
 {
     public static void MapCourseEndpoints(this IEndpointRouteBuilder app)
@@ -16,16 +17,22 @@ public static class CourseEndpoints
              .RequireAuthorization();
 
         group.MapGet("/", GetAll)
-            .WithName("GetAllCourses")
-            .WithSummary("Get all courses");
-
-        group.MapPost("/", Create)
-            .WithName("CreateCourse")
-            .WithSummary("Create a new course");
+    .WithName("GetAllCourses")
+    .WithSummary("Get all courses")
+    .RequireAuthorization();
 
         group.MapGet("/{id:guid}", GetById)
             .WithName("GetCourseById")
-            .WithSummary("Get course by ID");
+            .WithSummary("Get course by ID")
+            .RequireAuthorization();
+
+        group.MapPost("/", Create)
+            .WithName("CreateCourse")
+            .WithSummary("Create a new course")
+            .RequireAuthorization(Policies.CanManageCourses);
+
+        group.MapPut("/{id:guid}", Update)
+            .RequireAuthorization(Policies.CanManageCourses);
     }
 
     private static async Task<IResult> GetAll(
@@ -57,6 +64,20 @@ public static class CourseEndpoints
     {
         var query = new GetCourseByIdQuery(id);
         var result = await handler.HandleAsync(query, cancellationToken);
+        return result.IsSuccess
+            ? TypedResults.Ok(result.Value)
+            : result.ToProblemDetails();
+    }
+    private static async Task<IResult> Update(
+    Guid id,
+    UpdateCourseCommand command,
+    ICommandHandler<UpdateCourseCommand, Result<UpdateCourseResponse>> handler,
+    CancellationToken cancellationToken)
+    {
+        var updateCommand = command with { Id = id };
+
+        var result = await handler.HandleAsync(updateCommand, cancellationToken);
+
         return result.IsSuccess
             ? TypedResults.Ok(result.Value)
             : result.ToProblemDetails();
