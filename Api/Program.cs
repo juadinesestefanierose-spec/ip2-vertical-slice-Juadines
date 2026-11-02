@@ -8,6 +8,7 @@ using Application.Abstractions.Messaging;
 using Application.Features.Admissions.CreateAdmission;
 using Application.Features.Admissions.GetAdmissionById;
 using Application.Features.Admissions.GetAllAdmissions;
+using Application.Features.Auth.Login;
 using Application.Features.Auth.Register;
 using Application.Features.Courses.CreateCourse;
 using Application.Features.Courses.GetAllCourses;
@@ -21,6 +22,10 @@ using Infrastructure.Authentication;
 using Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Scalar.AspNetCore;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.IdentityModel.Tokens;
+using System.Text;
+using Microsoft.OpenApi;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -43,8 +48,8 @@ builder.Services.AddScoped<IQueryHandler<GetCourseByIdQuery, Result<GetCourseByI
 builder.Services.AddScoped<ICommandHandler<CreateAdmissionCommand, Result<CreateAdmissionResponse>>, CreateAdmissionCommandHandler>();
 builder.Services.AddScoped<IQueryHandler<GetAdmissionByIdQuery, Result<GetAdmissionByIdResponse>>, GetAdmissionByIdQueryHandler>();
 builder.Services.AddScoped<IQueryHandler<GetAllAdmissionsQuery, Result<GetAllAdmissionsResponse>>,GetAllAdmissionsQueryHandler>();
-builder.Services.AddScoped<ICommandHandler<RegisterCommand, Result<RegisterResponse>>,
-RegisterCommandHandler>();
+builder.Services.AddScoped<ICommandHandler<LoginCommand, Result<LoginResponse>>,LoginCommandHandler>();
+builder.Services.AddScoped<ICommandHandler<RegisterCommand, Result<RegisterResponse>>,RegisterCommandHandler>();
 builder.Services.AddScoped<IPasswordHasher, Infrastructure.Authentication.PasswordHasher>();
 builder.Services.AddOptions<JwtOptions>()
     .Bind(builder.Configuration.GetSection(JwtOptions.SectionName))
@@ -63,17 +68,50 @@ builder.Services.AddOpenApi(options =>
 {
     options.AddDocumentTransformer((document, _, _) =>
     {
-        document.Info.Title = "Vertical Slice API";
-        document.Info.Description = "A simple API demonstrating Vertical Slice Architecture";
+        document.Components ??= new OpenApiComponents();
+        document.Components.SecuritySchemes ??= new Dictionary<string,
+        IOpenApiSecurityScheme>();
+        document.Components.SecuritySchemes["Bearer"] = new OpenApiSecurityScheme
+        {
+            Type = SecuritySchemeType.Http,
+            Scheme = "bearer",
+            BearerFormat = "JWT",
+            Description = "Paste the access token from /api/auth/login"
+        };
+        document.Security ??= [];
+        document.Security.Add(new OpenApiSecurityRequirement
+        {
+            [new OpenApiSecuritySchemeReference("Bearer", document)] = []
+        });
         return Task.CompletedTask;
     });
 });
+var jwtSection = builder.Configuration.GetSection(JwtOptions.SectionName);
+builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+.AddJwtBearer(options =>
+{
+    options.TokenValidationParameters = new TokenValidationParameters
+    {
+        ValidateIssuer = true,
+        ValidateAudience = true,
+        ValidateLifetime = true,
+        ValidateIssuerSigningKey = true,
+        ValidIssuer = jwtSection["Issuer"],
+        ValidAudience = jwtSection["Audience"],
+        IssuerSigningKey = new SymmetricSecurityKey(
+    Encoding.UTF8.GetBytes(jwtSection["SigningKey"]!)),
+        ClockSkew = TimeSpan.FromSeconds(30)
+    };
+});
+builder.Services.AddAuthorization();
 
 
 // Seed data
 var app = builder.Build();
-await app.Services.MigrateAndSeedAsync();
 
+await app.Services.MigrateAndSeedAsync();
+app.UseAuthentication(); // who are you?
+app.UseAuthorization(); // are you allowed?
 // Configure the HTTP request pipeline
 if (app.Environment.IsDevelopment())
 {
