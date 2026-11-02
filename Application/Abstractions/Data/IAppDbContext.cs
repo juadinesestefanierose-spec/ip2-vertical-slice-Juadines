@@ -10,5 +10,6 @@ public interface IAppDbContext
     DbSet<Admission> Admissions { get; }
     DbSet<ApplicationUser> Users { get; }
     DbSet<AdmissionCourse> AdmissionCourses { get; }
+    DbSet<RevokedToken> RevokedTokens { get; }
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
 }

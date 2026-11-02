@@ -15,18 +15,19 @@ using Application.Features.Courses.GetAllCourses;
 using Application.Features.Courses.GetCourseById;
 using Application.Features.Students.CreateStudent;
 using Application.Features.Students.GetAllStudents;
+using Microsoft.IdentityModel.Tokens;
+using System.Text;
 using Application.Features.Students.GetStudentById;
 using Domain.Common;
 using FluentValidation;
 using Infrastructure.Authentication;
 using Infrastructure.Persistence;
-using Microsoft.EntityFrameworkCore;
-using Scalar.AspNetCore;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
-using Microsoft.IdentityModel.Tokens;
-using System.Text;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.OpenApi;
-
+using Scalar.AspNetCore;
+using System.Security.Claims;
+using System.IdentityModel.Tokens.Jwt;
 var builder = WebApplication.CreateBuilder(args);
 
 // Database
@@ -50,6 +51,7 @@ builder.Services.AddScoped<IQueryHandler<GetAdmissionByIdQuery, Result<GetAdmiss
 builder.Services.AddScoped<IQueryHandler<GetAllAdmissionsQuery, Result<GetAllAdmissionsResponse>>,GetAllAdmissionsQueryHandler>();
 builder.Services.AddScoped<ICommandHandler<LoginCommand, Result<LoginResponse>>,LoginCommandHandler>();
 builder.Services.AddScoped<ICommandHandler<RegisterCommand, Result<RegisterResponse>>,RegisterCommandHandler>();
+builder.Services.AddHostedService<Infrastructure.BackgroundJobs.RevokedTokenCleanupService>();
 builder.Services.AddScoped<IPasswordHasher, Infrastructure.Authentication.PasswordHasher>();
 builder.Services.AddOptions<JwtOptions>()
     .Bind(builder.Configuration.GetSection(JwtOptions.SectionName))
@@ -93,14 +95,53 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     options.TokenValidationParameters = new TokenValidationParameters
     {
         ValidateIssuer = true,
-        ValidateAudience = true,
-        ValidateLifetime = true,
-        ValidateIssuerSigningKey = true,
         ValidIssuer = jwtSection["Issuer"],
+
+        ValidateAudience = true,
         ValidAudience = jwtSection["Audience"],
+
+        ValidateLifetime = true,
+
+        ValidateIssuerSigningKey = true,
         IssuerSigningKey = new SymmetricSecurityKey(
-    Encoding.UTF8.GetBytes(jwtSection["SigningKey"]!)),
-        ClockSkew = TimeSpan.FromSeconds(30)
+        Encoding.UTF8.GetBytes(jwtSection["SigningKey"]!)),
+
+        ClockSkew = TimeSpan.Zero
+    };
+    options.Events = new JwtBearerEvents
+    {
+        OnTokenValidated = async context =>
+        {
+            var dbContext =
+                context.HttpContext.RequestServices
+                    .GetRequiredService<Application.Abstractions.Data.IAppDbContext>();
+
+            var jti = context.Principal?.FindFirstValue(JwtRegisteredClaimNames.Jti);
+            var sub = context.Principal?.FindFirstValue(JwtRegisteredClaimNames.Sub);
+            var iatRaw = context.Principal?.FindFirstValue(JwtRegisteredClaimNames.Iat);
+
+            if (jti is not null &&
+                await dbContext.RevokedTokens.AnyAsync(r => r.Jti == jti))
+            {
+                context.Fail("Token has been revoked.");
+                return;
+            }
+
+            if (sub is not null && Guid.TryParse(sub, out var userId) &&
+                iatRaw is not null && long.TryParse(iatRaw, out var iatUnix))
+            {
+                var issuedAtUtc = DateTimeOffset
+                    .FromUnixTimeSeconds(iatUnix).UtcDateTime;
+
+                var user = await dbContext.Users.FindAsync([userId]);
+
+                if (user?.TokensValidFromUtc is { } validFrom &&
+                    issuedAtUtc < validFrom)
+                {
+                    context.Fail("Token was issued before the user's last sign-out-everywhere.");
+                }
+            }
+        }
     };
 });
 builder.Services.AddAuthorization();
